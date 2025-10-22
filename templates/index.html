@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Correção de Gabaritos</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>📋 Sistema de Correção de Gabaritos</h1>
+                <p>Correção automática com OCR de resposta de múltipla escolha</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="correcao">📋 Correção</button>
+                <button class="tab-btn" data-tab="gabaritos">📝 Gabaritos</button>
+            </div>
+
+            <!-- Aba Correção -->
+            <div class="tab-content active" id="tab-correcao">
+            <!-- Upload Section -->
+            <section class="section upload-section">
+                <h2>📤 Upload e Correção</h2>
+                <div class="upload-area" id="uploadArea">
+                    <svg class="upload-icon" viewBox="0 0 24 24">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    </svg>
+                    <p class="upload-text">Clique ou arraste um PDF aqui</p>
+                    <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                </div>
+                <div id="uploadStatus" class="upload-status" style="display: none;"></div>
+            </section>
+
+            <!-- Stats Section -->
+            <section class="section stats-section">
+                <h2>📊 Estatísticas</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalReports">0</div>
+                        <div class="stat-label">Correções</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="avgGrade">0.0</div>
+                        <div class="stat-label">Média de Notas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="maxGrade">0.0</div>
+                        <div class="stat-label">Melhor Nota</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="minGrade">0.0</div>
+                        <div class="stat-label">Pior Nota</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section class="section reports-section">
+                <h2>📑 Relatórios Recentes</h2>
+                <div id="reportsList" class="reports-list">
+                    <div class="loading">Carregando relatórios...</div>
+                </div>
+            </section>
+            </div>
+
+            <!-- Aba Gabaritos -->
+            <div class="tab-content" id="tab-gabaritos">
+            <section class="section gabaritos-section">
+                <h2>📝 Gerenciar Gabaritos</h2>
+
+                <!-- Gabarito Atual -->
+                <div class="gabarito-atual">
+                    <h3>✅ Gabarito Oficial Atual</h3>
+                    <div id="gabaroOfiialInfo" class="gabarito-info">
+                        <p>Nenhum gabarito selecionado</p>
+                    </div>
+                </div>
+
+                <!-- Criar Novo Gabarito -->
+                <div class="criar-gabarito">
+                    <h3>➕ Criar Novo Gabarito</h3>
+                    <div class="form-group">
+                        <label>Nome do Gabarito:</label>
+                        <input type="text" id="nomeGabarito" placeholder="Ex: Prova Matemática">
+                    </div>
+                    <div class="form-group">
+                        <label>Número de Questões:</label>
+                        <input type="number" id="numQuestoes" min="1" max="200" value="40" onchange="setupQuestoesInputs()">
+                    </div>
+                    <div id="questoesContainer" class="questoes-circulos"></div>
+                    <button class="btn btn-primary" onclick="criarGabarito()">Criar Gabarito</button>
+                    <div id="mensagemGabarito" style="margin-top: 10px;"></div>
+                </div>
+
+                <!-- Lista de Gabaritos -->
+                <div class="lista-gabaritos">
+                    <h3>📚 Gabaritos Disponíveis</h3>
+                    <div id="gabaritosLista" class="gabaritos-grid">
+                        <div class="loading">Carregando gabaritos...</div>
+                    </div>
+                </div>
+            </section>
+            </div>
+        </main>
+
+        <!-- Modal para visualizar relatório -->
+        <div id="reportModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close">&times;</span>
+                <div id="reportContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
