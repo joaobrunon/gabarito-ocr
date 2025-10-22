@@ -84,9 +84,105 @@
                     </div>
                 </div>
 
+                <!-- Gerar Gabaritos Personalizados de CSV -->
+                <div class="gerar-csv-gabarito">
+                    <h3>📊 Gerar Gabaritos Personalizados de CSV</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Importe um CSV com dados dos alunos (Nome, RA, Turma) e gere gabaritos personalizados para cada aluno</p>
+
+                    <!-- Upload CSV -->
+                    <div class="csv-upload-area" id="csvUploadArea">
+                        <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+                        <p class="upload-text">📁 Clique ou arraste um arquivo CSV aqui</p>
+                    </div>
+                    <div id="csvStatus" style="margin-top: 10px; display: none;"></div>
+
+                    <!-- Turmas e Configuração (escondidas até fazer upload) -->
+                    <div id="csvConfigSection" style="display: none; margin-top: 20px;">
+                        <h4>Turmas Disponíveis:</h4>
+                        <div id="turmasCheckboxes" class="turmas-grid"></div>
+
+                        <h4 style="margin-top: 20px;">Configuração da Prova:</h4>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Título da Prova:</label>
+                                <input type="text" id="csvTitulo" placeholder="GABARITO DE PROVA" value="GABARITO DE PROVA">
+                            </div>
+                            <div class="form-group">
+                                <label>Disciplina (opcional):</label>
+                                <input type="text" id="csvDisciplina" placeholder="Ex: Matemática">
+                            </div>
+                            <div class="form-group">
+                                <label>Professor (opcional):</label>
+                                <input type="text" id="csvProfessor" placeholder="Ex: Prof. João">
+                            </div>
+                            <div class="form-group">
+                                <label>Código da Prova (opcional):</label>
+                                <input type="text" id="csvCodigo" placeholder="Ex: MAT-2024-P1">
+                            </div>
+                            <div class="form-group">
+                                <label>Número de Questões:</label>
+                                <input type="number" id="csvNumQuestoes" min="1" max="200" value="40">
+                            </div>
+                            <div class="form-group">
+                                <label>Alternativas:</label>
+                                <input type="text" id="csvAlternativas" placeholder="A,B,C,D,E" value="A,B,C,D,E">
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="gerarGabaritosDeCSV()">📄 Gerar Gabaritos Personalizados</button>
+                        <div id="mensagemCSV" style="margin-top: 10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Gerar Gabarito em PDF -->
+                <div class="gerar-pdf-gabarito">
+                    <h3>📄 Gerar Gabarito Simples em PDF</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Gere um gabarito em branco sem dados de alunos</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Nome do Arquivo:</label>
+                            <input type="text" id="pdfNomeArquivo" placeholder="Ex: Prova_Matematica">
+                        </div>
+                        <div class="form-group">
+                            <label>Título da Prova:</label>
+                            <input type="text" id="pdfTitulo" placeholder="GABARITO DE PROVA" value="GABARITO DE PROVA">
+                        </div>
+                        <div class="form-group">
+                            <label>Disciplina (opcional):</label>
+                            <input type="text" id="pdfDisciplina" placeholder="Ex: Matemática">
+                        </div>
+                        <div class="form-group">
+                            <label>Professor (opcional):</label>
+                            <input type="text" id="pdfProfessor" placeholder="Ex: Prof. João">
+                        </div>
+                        <div class="form-group">
+                            <label>Código da Prova (opcional):</label>
+                            <input type="text" id="pdfCodigo" placeholder="Ex: MAT-2024-P1">
+                        </div>
+                        <div class="form-group">
+                            <label>Número de Questões:</label>
+                            <input type="number" id="pdfNumQuestoes" min="1" max="200" value="40">
+                        </div>
+                        <div class="form-group">
+                            <label>Alternativas (separadas por vírgula):</label>
+                            <input type="text" id="pdfAlternativas" placeholder="A,B,C,D,E" value="A,B,C,D,E">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="gerarGabaritoPDF()">📄 Gerar PDF</button>
+                    <div id="mensagemPDF" style="margin-top: 10px;"></div>
+                </div>
+
+                <!-- Lista de PDFs Gerados -->
+                <div class="lista-pdfs-gerados">
+                    <h3>📁 PDFs de Gabaritos Gerados</h3>
+                    <div id="pdfsList" class="pdfs-grid">
+                        <div class="loading">Carregando PDFs...</div>
+                    </div>
+                </div>
+
                 <!-- Criar Novo Gabarito -->
                 <div class="criar-gabarito">
-                    <h3>➕ Criar Novo Gabarito</h3>
+                    <h3>➕ Criar Novo Gabarito (JSON)</h3>
                     <div class="form-group">
                         <label>Nome do Gabarito:</label>
                         <input type="text" id="nomeGabarito" placeholder="Ex: Prova Matemática">
@@ -102,7 +198,7 @@
 
                 <!-- Lista de Gabaritos -->
                 <div class="lista-gabaritos">
-                    <h3>📚 Gabaritos Disponíveis</h3>
+                    <h3>📚 Gabaritos Disponíveis (JSON)</h3>
                     <div id="gabaritosLista" class="gabaritos-grid">
                         <div class="loading">Carregando gabaritos...</div>
                     </div>

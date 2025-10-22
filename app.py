@@ -12,6 +12,9 @@ from pathlib import Path
 from datetime import datetime
 import subprocess
 import sys
+from gerador_gabarito import GeradorGabarito
+from gerar_gabaritos_personalizados import ler_csv_alunos, listar_turmas, gerar_gabaritos_turma
+import csv
 
 # Configuração
 app = Flask(__name__)
@@ -19,17 +22,25 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 app.config['UPLOAD_FOLDER'] = 'pdfs_para_corrigir'
 app.config['REPORTS_FOLDER'] = 'relatorios_correcao'
 app.config['GABARITOS_FOLDER'] = 'gabaritos'
+app.config['GABARITOS_PDF_FOLDER'] = 'gabaritos_gerados'
+app.config['CSV_UPLOAD_FOLDER'] = 'uploads_csv'
 
 # Criar pastas se não existirem
 Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
 Path(app.config['REPORTS_FOLDER']).mkdir(exist_ok=True)
 Path(app.config['GABARITOS_FOLDER']).mkdir(exist_ok=True)
+Path(app.config['GABARITOS_PDF_FOLDER']).mkdir(exist_ok=True)
+Path(app.config['CSV_UPLOAD_FOLDER']).mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'pdf'}
+ALLOWED_CSV_EXTENSIONS = {'csv'}
 GABARITO_OFICIAL = 'gabarito_oficial.json'
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_csv_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_CSV_EXTENSIONS
 
 @app.route('/')
 def index():
@@ -292,6 +303,241 @@ def deletar_gabarito(nome):
         return jsonify({'success': True, 'message': f'Gabarito "{nome}" deletado'})
     except Exception as e:
         return jsonify({'error': f'Erro ao deletar gabarito: {str(e)}'}), 500
+
+@app.route('/api/gabarito/gerar-pdf', methods=['POST'])
+def gerar_gabarito_pdf():
+    """Gera um gabarito em PDF"""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'Dados inválidos'}), 400
+
+    # Extrair parâmetros
+    nome_arquivo = data.get('nome_arquivo', '').strip()
+    titulo = data.get('titulo', 'GABARITO DE PROVA').strip()
+    disciplina = data.get('disciplina', '').strip() or None
+    professor = data.get('professor', '').strip() or None
+    codigo_prova = data.get('codigo_prova', '').strip() or None
+    num_questoes = int(data.get('num_questoes', 40))
+    alternativas_str = data.get('alternativas', 'A,B,C,D,E').strip()
+
+    # Validações
+    if not nome_arquivo:
+        return jsonify({'error': 'Nome do arquivo é obrigatório'}), 400
+
+    if num_questoes < 1 or num_questoes > 200:
+        return jsonify({'error': 'Número de questões deve estar entre 1 e 200'}), 400
+
+    # Processar alternativas
+    alternativas = [a.strip().upper() for a in alternativas_str.split(',') if a.strip()]
+    if not alternativas:
+        alternativas = ['A', 'B', 'C', 'D', 'E']
+
+    # Adicionar .pdf se não tiver
+    if not nome_arquivo.endswith('.pdf'):
+        nome_arquivo += '.pdf'
+
+    # Caminho completo
+    pdf_path = Path(app.config['GABARITOS_PDF_FOLDER']) / nome_arquivo
+
+    try:
+        # Gerar PDF
+        gerador = GeradorGabarito(str(pdf_path))
+        gerador.gerar_gabarito_padrao(
+            num_questoes=num_questoes,
+            alternativas=alternativas,
+            titulo=titulo,
+            disciplina=disciplina,
+            professor=professor,
+            codigo_prova=codigo_prova
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f'Gabarito PDF "{nome_arquivo}" gerado com sucesso!',
+            'arquivo': nome_arquivo,
+            'caminho': str(pdf_path)
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Erro ao gerar PDF: {str(e)}'}), 500
+
+@app.route('/api/gabarito/download-pdf/<path:filename>')
+def download_gabarito_pdf(filename):
+    """Faz download de um gabarito PDF gerado"""
+    pdf_path = Path(app.config['GABARITOS_PDF_FOLDER']) / filename
+
+    if not pdf_path.exists():
+        return jsonify({'error': 'PDF não encontrado'}), 404
+
+    # Nome do arquivo para download (sem o caminho)
+    download_name = Path(filename).name
+
+    return send_file(pdf_path, as_attachment=True, download_name=download_name)
+
+@app.route('/api/gabaritos-pdf', methods=['GET'])
+def list_gabaritos_pdf():
+    """Lista todos os gabaritos PDF gerados (incluindo subpastas)"""
+    gabaritos_pdf = []
+    gabaritos_pdf_path = Path(app.config['GABARITOS_PDF_FOLDER'])
+
+    # PDFs diretos na pasta principal
+    for pdf_file in gabaritos_pdf_path.glob('*.pdf'):
+        stat = pdf_file.stat()
+        gabaritos_pdf.append({
+            'nome': pdf_file.name,
+            'caminho_relativo': pdf_file.name,
+            'tamanho': round(stat.st_size / 1024, 2),  # KB
+            'data_criacao': datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y %H:%M')
+        })
+
+    # PDFs em subpastas (gabaritos personalizados)
+    for pdf_file in gabaritos_pdf_path.glob('*/*.pdf'):
+        stat = pdf_file.stat()
+        caminho_relativo = f"{pdf_file.parent.name}/{pdf_file.name}"
+        gabaritos_pdf.append({
+            'nome': f"{pdf_file.parent.name}",  # Nome da turma
+            'caminho_relativo': caminho_relativo,
+            'tamanho': round(stat.st_size / 1024, 2),  # KB
+            'data_criacao': datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y %H:%M')
+        })
+
+    # Ordenar por data (mais recentes primeiro)
+    gabaritos_pdf.sort(key=lambda x: x['data_criacao'], reverse=True)
+
+    return jsonify(gabaritos_pdf)
+
+@app.route('/api/csv/upload', methods=['POST'])
+def upload_csv():
+    """Faz upload de CSV e analisa turmas"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Arquivo vazio'}), 400
+
+    if not allowed_csv_file(file.filename):
+        return jsonify({'error': 'Apenas arquivos CSV são permitidos'}), 400
+
+    # Salvar arquivo
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['CSV_UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    try:
+        # Ler alunos do CSV
+        alunos = ler_csv_alunos(filepath)
+
+        # Organizar por turmas
+        turmas = listar_turmas(alunos)
+
+        # Preparar resposta
+        turmas_info = []
+        for turma, alunos_turma in sorted(turmas.items()):
+            turmas_info.append({
+                'nome': turma,
+                'num_alunos': len(alunos_turma)
+            })
+
+        return jsonify({
+            'success': True,
+            'arquivo': filename,
+            'total_alunos': len(alunos),
+            'total_turmas': len(turmas),
+            'turmas': turmas_info
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Erro ao processar CSV: {str(e)}'}), 500
+
+@app.route('/api/csv/gerar-gabaritos', methods=['POST'])
+def gerar_gabaritos_csv():
+    """Gera gabaritos personalizados a partir do CSV"""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'Dados inválidos'}), 400
+
+    # Extrair parâmetros
+    csv_filename = data.get('csv_filename', '').strip()
+    turmas_selecionadas = data.get('turmas', [])
+    titulo = data.get('titulo', 'GABARITO DE PROVA').strip()
+    disciplina = data.get('disciplina', '').strip() or None
+    professor = data.get('professor', '').strip() or None
+    codigo_prova = data.get('codigo_prova', '').strip() or None
+    num_questoes = int(data.get('num_questoes', 40))
+    alternativas_str = data.get('alternativas', 'A,B,C,D,E').strip()
+
+    # Validações
+    if not csv_filename:
+        return jsonify({'error': 'Nome do arquivo CSV é obrigatório'}), 400
+
+    if not turmas_selecionadas or len(turmas_selecionadas) == 0:
+        return jsonify({'error': 'Selecione pelo menos uma turma'}), 400
+
+    csv_path = Path(app.config['CSV_UPLOAD_FOLDER']) / csv_filename
+    if not csv_path.exists():
+        return jsonify({'error': 'Arquivo CSV não encontrado'}), 404
+
+    # Processar alternativas
+    alternativas = [a.strip().upper() for a in alternativas_str.split(',') if a.strip()]
+    if not alternativas:
+        alternativas = ['A', 'B', 'C', 'D', 'E']
+
+    try:
+        # Ler alunos do CSV
+        alunos = ler_csv_alunos(str(csv_path))
+
+        # Organizar por turmas
+        turmas = listar_turmas(alunos)
+
+        # Configuração
+        config = {
+            'titulo': titulo,
+            'disciplina': disciplina,
+            'professor': professor,
+            'codigo_prova': codigo_prova,
+            'num_questoes': num_questoes,
+            'alternativas': alternativas
+        }
+
+        # Pasta de saída
+        pasta_saida = app.config['GABARITOS_PDF_FOLDER']
+
+        # Gerar gabaritos para as turmas selecionadas
+        total_alunos = 0
+        pdfs_gerados = []
+
+        for turma_nome in turmas_selecionadas:
+            if turma_nome in turmas:
+                alunos_turma = turmas[turma_nome]
+                total_alunos += len(alunos_turma)
+
+                # Gerar gabarito para a turma
+                gerar_gabaritos_turma(alunos_turma, turma_nome, pasta_saida, config)
+
+                # Nome do PDF gerado
+                import re
+                nome_pasta_limpo = re.sub(r'[/\\:*?"<>|]', '', turma_nome).strip()
+                nome_pasta_limpo = re.sub(r'\s+', '_', nome_pasta_limpo)
+                pdf_nome = f"{nome_pasta_limpo}/{nome_pasta_limpo}.pdf"
+                pdfs_gerados.append({
+                    'turma': turma_nome,
+                    'arquivo': pdf_nome,
+                    'num_alunos': len(alunos_turma)
+                })
+
+        return jsonify({
+            'success': True,
+            'message': f'Gabaritos gerados com sucesso para {len(turmas_selecionadas)} turma(s)!',
+            'total_alunos': total_alunos,
+            'total_turmas': len(turmas_selecionadas),
+            'pdfs': pdfs_gerados
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Erro ao gerar gabaritos: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)

@@ -28,5 +28,7 @@ Thumbs.db
 gabaritos/
 pdfs_para_corrigir/
 relatorios_correcao/
+gabaritos_gerados/
+uploads_csv/
 gabarito_oficial.json
 *.tmp

@@ -183,6 +183,7 @@ function switchTab(tabName) {
     if (tabName === 'gabaritos') {
         loadGabaritos();
         loadGabaroAtual();
+        loadPDFsGerados();
         setupQuestoesInputs();
     }
 }
@@ -371,6 +372,301 @@ async function deletarGabarito(nome) {
         }
     } catch (error) {
         alert('Erro: ' + error.message);
+    }
+}
+
+// Funções de Geração de PDF
+async function gerarGabaritoPDF() {
+    const mensagem = document.getElementById('mensagemPDF');
+
+    const dados = {
+        nome_arquivo: document.getElementById('pdfNomeArquivo').value.trim(),
+        titulo: document.getElementById('pdfTitulo').value.trim() || 'GABARITO DE PROVA',
+        disciplina: document.getElementById('pdfDisciplina').value.trim(),
+        professor: document.getElementById('pdfProfessor').value.trim(),
+        codigo_prova: document.getElementById('pdfCodigo').value.trim(),
+        num_questoes: parseInt(document.getElementById('pdfNumQuestoes').value),
+        alternativas: document.getElementById('pdfAlternativas').value.trim() || 'A,B,C,D,E'
+    };
+
+    if (!dados.nome_arquivo) {
+        mensagem.textContent = '✗ Digite um nome para o arquivo';
+        mensagem.style.color = '#e74c3c';
+        mensagem.style.display = 'block';
+        return;
+    }
+
+    mensagem.textContent = '⏳ Gerando PDF...';
+    mensagem.style.color = '#3498db';
+    mensagem.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/gabarito/gerar-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dados)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            mensagem.textContent = '✓ ' + data.message;
+            mensagem.style.color = '#27ae60';
+
+            // Limpar formulário
+            document.getElementById('pdfNomeArquivo').value = '';
+            document.getElementById('pdfDisciplina').value = '';
+            document.getElementById('pdfProfessor').value = '';
+            document.getElementById('pdfCodigo').value = '';
+
+            // Recarregar lista
+            setTimeout(() => {
+                loadPDFsGerados();
+                mensagem.style.display = 'none';
+            }, 2000);
+
+            // Oferecer download
+            if (confirm('PDF gerado! Deseja fazer download agora?')) {
+                window.location.href = `/api/gabarito/download-pdf/${data.arquivo}`;
+            }
+        } else {
+            mensagem.textContent = '✗ ' + (data.error || 'Erro ao gerar PDF');
+            mensagem.style.color = '#e74c3c';
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        mensagem.textContent = '✗ Erro: ' + error.message;
+        mensagem.style.color = '#e74c3c';
+    }
+}
+
+async function loadPDFsGerados() {
+    try {
+        const response = await fetch('/api/gabaritos-pdf');
+        const pdfs = await response.json();
+
+        const container = document.getElementById('pdfsList');
+
+        if (pdfs.length === 0) {
+            container.innerHTML = '<div class="empty-state">Nenhum PDF gerado ainda</div>';
+            return;
+        }
+
+        container.innerHTML = pdfs.map(pdf => `
+            <div class="pdf-card">
+                <div class="pdf-icon">📄</div>
+                <h4>${pdf.nome}</h4>
+                <p class="pdf-info">
+                    <span>📊 ${pdf.tamanho} KB</span><br>
+                    <span>📅 ${pdf.data_criacao}</span>
+                </p>
+                <button class="btn btn-primary btn-small" onclick="downloadPDF('${pdf.caminho_relativo || pdf.nome}')">
+                    ⬇️ Baixar
+                </button>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Erro ao carregar PDFs:', error);
+        document.getElementById('pdfsList').innerHTML = '<div class="empty-state">Erro ao carregar PDFs</div>';
+    }
+}
+
+function downloadPDF(filename) {
+    window.location.href = `/api/gabarito/download-pdf/${filename}`;
+}
+
+// Funções de Upload e Geração de CSV
+let csvFilenameGlobal = '';
+let turmasDisponiveisGlobal = [];
+
+// Event listeners para CSV
+const csvUploadArea = document.getElementById('csvUploadArea');
+const csvFileInput = document.getElementById('csvFileInput');
+
+csvUploadArea.addEventListener('click', () => csvFileInput.click());
+
+csvUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    csvUploadArea.classList.add('dragover');
+});
+
+csvUploadArea.addEventListener('dragleave', () => {
+    csvUploadArea.classList.remove('dragover');
+});
+
+csvUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    csvUploadArea.classList.remove('dragover');
+    handleCSVFiles(e.dataTransfer.files);
+});
+
+csvFileInput.addEventListener('change', (e) => {
+    handleCSVFiles(e.target.files);
+});
+
+async function handleCSVFiles(files) {
+    const file = files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+        showCSVStatus('Apenas arquivos CSV são permitidos', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    showCSVStatus('⏳ Analisando CSV...', 'loading');
+
+    try {
+        const response = await fetch('/api/csv/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            csvFilenameGlobal = data.arquivo;
+            turmasDisponiveisGlobal = data.turmas;
+
+            showCSVStatus(`✅ CSV carregado! ${data.total_alunos} alunos em ${data.total_turmas} turmas`, 'success');
+
+            // Mostrar turmas e configuração
+            mostrarTurmas(data.turmas);
+            document.getElementById('csvConfigSection').style.display = 'block';
+
+            csvFileInput.value = '';
+        } else {
+            showCSVStatus(`✗ ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showCSVStatus(`✗ Erro: ${error.message}`, 'error');
+    }
+}
+
+function showCSVStatus(message, type) {
+    const status = document.getElementById('csvStatus');
+    status.textContent = message;
+    status.className = type;
+    status.style.display = 'block';
+}
+
+function mostrarTurmas(turmas) {
+    const container = document.getElementById('turmasCheckboxes');
+    container.innerHTML = '';
+
+    turmas.forEach((turma, idx) => {
+        const div = document.createElement('div');
+        div.className = 'turma-checkbox';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `turma_${idx}`;
+        checkbox.value = turma.nome;
+        checkbox.checked = true;
+
+        const label = document.createElement('label');
+        label.htmlFor = `turma_${idx}`;
+        label.textContent = `${turma.nome} (${turma.num_alunos} alunos)`;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+    });
+
+    // Botão selecionar todas
+    const btnDiv = document.createElement('div');
+    btnDiv.style.marginTop = '10px';
+
+    const btnAll = document.createElement('button');
+    btnAll.className = 'btn btn-small';
+    btnAll.textContent = 'Selecionar Todas';
+    btnAll.onclick = () => {
+        document.querySelectorAll('.turma-checkbox input').forEach(cb => cb.checked = true);
+    };
+
+    const btnNone = document.createElement('button');
+    btnNone.className = 'btn btn-small';
+    btnNone.textContent = 'Desmarcar Todas';
+    btnNone.style.marginLeft = '10px';
+    btnNone.onclick = () => {
+        document.querySelectorAll('.turma-checkbox input').forEach(cb => cb.checked = false);
+    };
+
+    btnDiv.appendChild(btnAll);
+    btnDiv.appendChild(btnNone);
+    container.appendChild(btnDiv);
+}
+
+async function gerarGabaritosDeCSV() {
+    const mensagem = document.getElementById('mensagemCSV');
+
+    if (!csvFilenameGlobal) {
+        mensagem.textContent = '✗ Faça o upload de um CSV primeiro';
+        mensagem.style.color = '#e74c3c';
+        mensagem.style.display = 'block';
+        return;
+    }
+
+    // Obter turmas selecionadas
+    const turmasSelecionadas = [];
+    document.querySelectorAll('.turma-checkbox input:checked').forEach(cb => {
+        turmasSelecionadas.push(cb.value);
+    });
+
+    if (turmasSelecionadas.length === 0) {
+        mensagem.textContent = '✗ Selecione pelo menos uma turma';
+        mensagem.style.color = '#e74c3c';
+        mensagem.style.display = 'block';
+        return;
+    }
+
+    const dados = {
+        csv_filename: csvFilenameGlobal,
+        turmas: turmasSelecionadas,
+        titulo: document.getElementById('csvTitulo').value.trim() || 'GABARITO DE PROVA',
+        disciplina: document.getElementById('csvDisciplina').value.trim(),
+        professor: document.getElementById('csvProfessor').value.trim(),
+        codigo_prova: document.getElementById('csvCodigo').value.trim(),
+        num_questoes: parseInt(document.getElementById('csvNumQuestoes').value),
+        alternativas: document.getElementById('csvAlternativas').value.trim() || 'A,B,C,D,E'
+    };
+
+    mensagem.textContent = `⏳ Gerando gabaritos para ${turmasSelecionadas.length} turma(s)... Isso pode levar alguns minutos.`;
+    mensagem.style.color = '#3498db';
+    mensagem.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/csv/gerar-gabaritos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dados)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            mensagem.textContent = `✓ ${data.message}\n${data.total_alunos} alunos processados em ${data.total_turmas} turma(s)`;
+            mensagem.style.color = '#27ae60';
+
+            // Limpar formulário
+            document.getElementById('csvConfigSection').style.display = 'none';
+            csvFilenameGlobal = '';
+
+            // Recarregar lista de PDFs
+            setTimeout(() => {
+                loadPDFsGerados();
+                mensagem.style.display = 'none';
+            }, 3000);
+        } else {
+            mensagem.textContent = '✗ ' + (data.error || 'Erro ao gerar gabaritos');
+            mensagem.style.color = '#e74c3c';
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        mensagem.textContent = '✗ Erro: ' + error.message;
+        mensagem.style.color = '#e74c3c';
     }
 }
 
