@@ -16,11 +16,13 @@ class LeitorFinalV2:
         self.num_questoes = num_questoes
         self.alternativas = alternativas or ['A', 'B', 'C', 'D', 'E']
         self.debug = False
+        self.questoes_multiplas = []  # Lista de questões com múltiplas marcações
 
     def ler_gabarito(self, caminho_imagem: str, debug: bool = False) -> Dict:
         """Lê gabarito com adaptação automática"""
 
         self.debug = debug
+        self.questoes_multiplas = []  # Resetar a cada leitura
 
         # Carregar
         imagem = cv2.imread(caminho_imagem)
@@ -158,7 +160,7 @@ class LeitorFinalV2:
                 q_esq = idx_l + 1
                 grupo_esq = circ_linha[:5]
 
-                resposta = self._ensemble_deteccao(cinza, binaria, cinza_inv, grupo_esq)
+                resposta = self._ensemble_deteccao(cinza, binaria, cinza_inv, grupo_esq, q_esq)
                 if resposta:
                     respostas[str(q_esq)] = resposta
 
@@ -175,14 +177,14 @@ class LeitorFinalV2:
 
                 q_dir = idx_l + 21
                 if len(grupo_dir) >= 5:
-                    resposta = self._ensemble_deteccao(cinza, binaria, cinza_inv, grupo_dir[:5])
+                    resposta = self._ensemble_deteccao(cinza, binaria, cinza_inv, grupo_dir[:5], q_dir)
                     if resposta:
                         respostas[str(q_dir)] = resposta
 
         return respostas
 
     def _ensemble_deteccao(self, cinza: np.ndarray, binaria: np.ndarray,
-                          cinza_inv: np.ndarray, circulos_alt: list) -> Optional[str]:
+                          cinza_inv: np.ndarray, circulos_alt: list, num_questao: int) -> Optional[str]:
         """Votação de múltiplos métodos para detectar resposta"""
 
         votos = {alt: [] for alt in self.alternativas}
@@ -236,11 +238,13 @@ class LeitorFinalV2:
         melhor = max(scores_finais, key=scores_finais.get)
         melhor_score = scores_finais[melhor]
 
-        # Validar ambiguidade
+        # Validar ambiguidade - DETECTAR MÚLTIPLAS MARCAÇÕES
         scores_ord = sorted(scores_finais.values(), reverse=True)
         if len(scores_ord) > 1:
             diferenca = scores_ord[0] - scores_ord[1]
             if diferenca < 0.06:  # Threshold mais relaxado
+                # Registrar que esta questão tem múltiplas marcações ambíguas
+                self.questoes_multiplas.append(num_questao)
                 return None
 
         return melhor

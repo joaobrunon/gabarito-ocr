@@ -21,6 +21,7 @@
             <!-- Tabs -->
             <div class="tabs">
                 <button class="tab-btn active" data-tab="correcao">📋 Correção</button>
+                <button class="tab-btn" data-tab="envios">📊 Envios</button>
                 <button class="tab-btn" data-tab="gabaritos">📝 Gabaritos</button>
             </div>
 
@@ -29,14 +30,47 @@
             <!-- Upload Section -->
             <section class="section upload-section">
                 <h2>📤 Upload e Correção</h2>
+
+                <!-- Upload CSV de Referência -->
+                <div class="csv-referencia-section" style="margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db;">
+                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #333;">👥 CSV de Referência para Turmas</h3>
+                    <div id="csvRefStatus" style="margin-bottom: 10px; color: #999; font-size: 13px;">Nenhum CSV carregado</div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="file" id="csvRefInput" accept=".csv" style="display: none;">
+                        <button class="btn btn-small" onclick="document.getElementById('csvRefInput').click()">📂 Carregar CSV</button>
+                        <button class="btn btn-small btn-danger" onclick="limparCSVReferencia()" id="btnLimparCSVRef" style="display: none;">🗑️ Remover CSV</button>
+                    </div>
+                </div>
+
+                <!-- Seletor de Gabarito -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label for="gabaritoSelect" style="font-weight: bold; display: block; margin-bottom: 8px;">
+                        📝 Gabarito para Correção:
+                    </label>
+                    <select id="gabaritoSelect" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px;">
+                        <option value="">Carregando gabaritos...</option>
+                    </select>
+                </div>
+
                 <div class="upload-area" id="uploadArea">
                     <svg class="upload-icon" viewBox="0 0 24 24">
                         <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                     </svg>
-                    <p class="upload-text">Clique ou arraste um PDF aqui</p>
-                    <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                    <p class="upload-text">Clique ou arraste PDFs aqui (múltiplos arquivos)</p>
+                    <input type="file" id="fileInput" accept=".pdf" multiple style="display: none;">
                 </div>
                 <div id="uploadStatus" class="upload-status" style="display: none;"></div>
+
+                <!-- Logs de Correção -->
+                <div class="correction-logs" style="margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; font-size: 16px; color: #666;">📋 Logs de Correção</h3>
+                        <button class="btn btn-small" onclick="limparLogs()" style="padding: 5px 10px; font-size: 12px;">🗑️ Limpar</button>
+                    </div>
+                    <div id="logsContainer" class="logs-box">
+                        <p style="color: #999; text-align: center; margin: 10px 0;">Nenhuma correção realizada ainda...</p>
+                    </div>
+                </div>
             </section>
 
             <!-- Stats Section -->
@@ -64,9 +98,36 @@
 
             <!-- Reports Section -->
             <section class="section reports-section">
-                <h2>📑 Relatórios Recentes</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">📑 Relatórios Recentes</h2>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label for="filtroTurma" style="font-weight: bold; font-size: 14px;">🏫 Filtrar por turma:</label>
+                        <select id="filtroTurma" onchange="filtrarPorTurma()" style="padding: 8px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px;">
+                            <option value="">Todas as turmas</option>
+                        </select>
+                    </div>
+                </div>
                 <div id="reportsList" class="reports-list">
                     <div class="loading">Carregando relatórios...</div>
+                </div>
+            </section>
+            </div>
+
+            <!-- Aba Envios -->
+            <div class="tab-content" id="tab-envios">
+            <section class="section envios-section">
+                <div class="envios-header">
+                    <div>
+                        <h2>📊 Envios por Turma</h2>
+                        <p style="color: #666; margin: 0;">Visualização organizada de todos os envios agrupados por turma</p>
+                    </div>
+                    <button class="btn-limpar-envios" onclick="limparTodosEnvios()" title="Limpar todos os relatórios">
+                        🗑️ Limpar Todos os Envios
+                    </button>
+                </div>
+
+                <div id="enviosContainer" class="envios-container">
+                    <div class="loading">Carregando envios...</div>
                 </div>
             </section>
             </div>
@@ -174,7 +235,13 @@
 
                 <!-- Lista de PDFs Gerados -->
                 <div class="lista-pdfs-gerados">
-                    <h3>📁 PDFs de Gabaritos Gerados</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>📁 PDFs de Gabaritos Gerados</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-primary btn-small" onclick="baixarTodosPDFs()">📦 Baixar Todos (ZIP)</button>
+                            <button class="btn btn-danger btn-small" onclick="limparPDFs()">🗑️ Limpar Todos</button>
+                        </div>
+                    </div>
                     <div id="pdfsList" class="pdfs-grid">
                         <div class="loading">Carregando PDFs...</div>
                     </div>
@@ -198,7 +265,10 @@
 
                 <!-- Lista de Gabaritos -->
                 <div class="lista-gabaritos">
-                    <h3>📚 Gabaritos Disponíveis (JSON)</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>📚 Gabaritos Disponíveis (JSON)</h3>
+                        <button class="btn btn-danger btn-small" onclick="limparGabaritos()">🗑️ Limpar Todos</button>
+                    </div>
                     <div id="gabaritosLista" class="gabaritos-grid">
                         <div class="loading">Carregando gabaritos...</div>
                     </div>

@@ -199,9 +199,9 @@ body {
     border-radius: 8px;
     padding: 20px;
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
+    gap: 20px;
     align-items: center;
-    cursor: pointer;
     transition: all 0.3s ease;
 }
 
@@ -210,6 +210,12 @@ body {
     border-color: #667eea;
     box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
     transform: translateX(5px);
+}
+
+.report-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .report-info {
@@ -839,6 +845,62 @@ body {
     display: inline-block;
 }
 
+/* Logs de Correção */
+.logs-box {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.log-entry {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border-left: 4px solid #667eea;
+    background: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.log-entry:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateX(3px);
+}
+
+.log-entry.success {
+    border-left-color: #28a745;
+    background: #f0fff4;
+}
+
+.log-entry.error {
+    border-left-color: #dc3545;
+    background: #fff5f5;
+}
+
+.log-entry.loading {
+    border-left-color: #17a2b8;
+    background: #f0f9ff;
+}
+
+.log-time {
+    font-size: 11px;
+    color: #999;
+    margin-right: 10px;
+    white-space: nowrap;
+}
+
+.log-message {
+    flex: 1;
+    color: #333;
+}
+
 @media (max-width: 768px) {
     .form-grid {
         grid-template-columns: 1fr;
@@ -846,5 +908,324 @@ body {
 
     .pdfs-grid {
         grid-template-columns: 1fr;
+    }
+
+    .logs-box {
+        font-size: 11px;
+    }
+
+    .log-entry {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .log-time {
+        margin-bottom: 4px;
+    }
+}
+
+/* ====================================================================
+   ESTILOS PARA ABA ENVIOS
+   ==================================================================== */
+
+.envios-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.btn-limpar-envios {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-limpar-envios:hover {
+    background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+    transform: translateY(-2px);
+}
+
+.btn-limpar-envios:active {
+    transform: translateY(0);
+}
+
+.envios-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.turma-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+.turma-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.turma-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    cursor: pointer;
+    user-select: none;
+}
+
+.turma-header:hover {
+    opacity: 0.95;
+}
+
+.turma-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.turma-nome {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.turma-stats {
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+.turma-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-export {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-export:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+}
+
+.btn-export:active {
+    transform: translateY(0);
+}
+
+.turma-expand {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.turma-expand svg {
+    transition: transform 0.3s ease;
+}
+
+.turma-content {
+    padding: 20px;
+    background: #f8f9fa;
+}
+
+.turma-estatisticas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: white;
+    border-radius: 8px;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.alunos-tabela-wrapper {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.alunos-tabela {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.alunos-tabela thead {
+    background: #f8f9fa;
+}
+
+.alunos-tabela th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.alunos-tabela tbody tr {
+    border-bottom: 1px solid #f1f3f5;
+    transition: background-color 0.2s;
+}
+
+.alunos-tabela tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.alunos-tabela tbody tr:last-child {
+    border-bottom: none;
+}
+
+.alunos-tabela td {
+    padding: 14px 16px;
+    font-size: 14px;
+}
+
+.aluno-nome {
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.aluno-ra {
+    color: #7f8c8d;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.aluno-acertos {
+    font-weight: 500;
+    color: #34495e;
+}
+
+.aluno-percentual .badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.badge-danger {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.aluno-nota {
+    color: #2c3e50;
+    font-size: 16px;
+}
+
+.aluno-data {
+    color: #7f8c8d;
+    font-size: 13px;
+}
+
+.aluno-acoes {
+    text-align: center;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.2s;
+    border-radius: 6px;
+}
+
+.btn-icon:hover {
+    background: #e9ecef;
+    transform: scale(1.1);
+}
+
+@media (max-width: 992px) {
+    .alunos-tabela-wrapper {
+        overflow-x: auto;
+    }
+
+    .alunos-tabela {
+        min-width: 700px;
+    }
+
+    .turma-nome {
+        font-size: 16px;
+    }
+
+    .stat-value {
+        font-size: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .envios-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .btn-limpar-envios {
+        width: 100%;
+        justify-content: center;
     }
 }
