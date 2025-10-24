@@ -49,6 +49,58 @@ window.addEventListener('click', (e) => {
 });
 
 // Funções
+// Função para monitorar progresso da correção em tempo real
+async function monitorarProgresso(jobId, fileName) {
+    let ultimosLogs = [];
+
+    while (true) {
+        try {
+            const response = await fetch(`/api/correction-progress/${jobId}`);
+            const progress = await response.json();
+
+            if (!response.ok) {
+                return { sucesso: false, erro: progress.error };
+            }
+
+            // Atualizar status com progresso
+            if (progress.total_pages > 0) {
+                showStatus(
+                    `⏳ ${fileName} - Página ${progress.current_page}/${progress.total_pages}`,
+                    'loading'
+                );
+            }
+
+            // Mostrar novos logs
+            if (progress.logs && progress.logs.length > 0) {
+                progress.logs.slice(ultimosLogs.length).forEach(log => {
+                    addLog(`📄 ${log}`, 'info');
+                });
+                ultimosLogs = progress.logs;
+            }
+
+            // Verificar se terminou
+            if (progress.status === 'completed') {
+                const msg = `✅ ${fileName} - Corrigido com sucesso!`;
+                showStatus(msg, 'success');
+                addLog(msg, 'success');
+                return { sucesso: true };
+            } else if (progress.status === 'failed') {
+                const msg = `✗ ${fileName} - Erro ao corrigir`;
+                showStatus(msg, 'error');
+                addLog(msg, 'error');
+                return { sucesso: false };
+            }
+
+            // Aguardar 1 segundo antes de consultar novamente
+            await sleep(1000);
+
+        } catch (error) {
+            console.error('Erro ao monitorar progresso:', error);
+            return { sucesso: false, erro: error.message };
+        }
+    }
+}
+
 async function handleFiles(files) {
     if (!files || files.length === 0) return;
 
@@ -110,14 +162,17 @@ async function processarMultiplosArquivos(files, gabarito) {
                 console.error('Resposta não-JSON:', text);
             }
 
-            if (response.ok) {
-                sucessos++;
-                const msg = `✅ ${file.name} - Corrigido! (${data.report.acertos}/${data.report.total} - Nota: ${data.report.nota.toFixed(1)})`;
-                showStatus(msg, 'success');
-                addLog(msg, 'success');
+            if (response.ok && data.job_id) {
+                // Iniciar polling do progresso
+                const resultado = await monitorarProgresso(data.job_id, file.name);
+                if (resultado.sucesso) {
+                    sucessos++;
+                } else {
+                    erros++;
+                }
             } else {
                 erros++;
-                const msg = `✗ ${file.name} - ${data.error}`;
+                const msg = `✗ ${file.name} - ${data.error || 'Erro desconhecido'}`;
                 showStatus(msg, 'error');
                 addLog(msg, 'error');
             }

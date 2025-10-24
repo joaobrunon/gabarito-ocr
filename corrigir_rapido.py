@@ -47,8 +47,129 @@ def carregar_csv_alunos(caminho_csv='csv_alunos_referencia/alunos_referencia.csv
     return alunos
 
 
+def corrigir_inclinacao(img):
+    """Detecta e corrige pequenas inclinações na imagem"""
+    try:
+        # Converter para escala de cinza
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Detectar bordas
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+
+        # Detectar linhas usando Hough Transform
+        lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
+
+        if lines is not None:
+            # Calcular ângulos dominantes
+            angles = []
+            for rho, theta in lines[:20]:  # Usar apenas as 20 linhas mais fortes
+                angle = np.degrees(theta) - 90
+                angles.append(angle)
+
+            if angles:
+                # Usar a mediana dos ângulos para evitar outliers
+                median_angle = np.median(angles)
+
+                # Se a inclinação for significativa (> 0.5°), corrigir
+                if abs(median_angle) > 0.5:
+                    # Rotacionar imagem
+                    (h, w) = img.shape[:2]
+                    center = (w // 2, h // 2)
+                    M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+                    img_corrigida = cv2.warpAffine(img, M, (w, h),
+                                                   flags=cv2.INTER_CUBIC,
+                                                   borderMode=cv2.BORDER_REPLICATE)
+                    return img_corrigida, median_angle
+
+        return img, 0
+    except:
+        return img, 0
+
+
+def preprocessar_imagem_para_codigo(img):
+    """Aplica múltiplos pré-processamentos para melhorar detecção de códigos (ordem otimizada)"""
+    processadas = []
+
+    # Converter para escala de cinza uma vez (usado em vários métodos)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Ordem otimizada: métodos mais rápidos e eficazes primeiro
+
+    # 1. Imagem original (mais rápido)
+    processadas.append(("original", img))
+
+    # 2. Escala de cinza simples (rápido)
+    processadas.append(("gray", cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)))
+
+    # 3. Blur + threshold OTSU (muito eficaz para códigos)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    processadas.append(("otsu", cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)))
+
+    # 4. CLAHE - equalização adaptativa (muito bom para iluminação desigual)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    clahe_img = clahe.apply(gray)
+    processadas.append(("clahe", cv2.cvtColor(clahe_img, cv2.COLOR_GRAY2BGR)))
+
+    # 5. Adaptive threshold (bom para fundos variados)
+    adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                     cv2.THRESH_BINARY, 11, 2)
+    processadas.append(("adaptive", cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR)))
+
+    # Apenas se necessário (mais lentos):
+    # 6. Sharpen (aumenta processamento)
+    # kernel_sharpen = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    # sharpened = cv2.filter2D(gray, -1, kernel_sharpen)
+    # processadas.append(("sharp", cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)))
+
+    return processadas
+
+
+def detectar_barcode(img):
+    """Tenta detectar código de barras usando pyzbar com múltiplos pré-processamentos"""
+    try:
+        from pyzbar import pyzbar
+
+        # Tentar com diferentes pré-processamentos
+        imagens_processadas = preprocessar_imagem_para_codigo(img)
+
+        for nome_proc, img_proc in imagens_processadas:
+            decoded_objects = pyzbar.decode(img_proc)
+
+            for obj in decoded_objects:
+                data = obj.data.decode('utf-8').strip()
+                # Validar se parece com um RA (numérico, 10-12 dígitos)
+                if data.isdigit() and 10 <= len(data) <= 12:
+                    return data, f"{obj.type} ({nome_proc})"
+
+        return None, None
+    except ImportError:
+        # pyzbar não instalado, retornar None
+        return None, None
+    except Exception:
+        return None, None
+
+
+def detectar_qrcode_multiplas_tentativas(img, qr_detector):
+    """Tenta detectar QR code com múltiplos pré-processamentos"""
+    # Tentar com a imagem original primeiro
+    data, bbox, _ = qr_detector.detectAndDecode(img)
+    if data and data.strip().isdigit() and 10 <= len(data.strip()) <= 12:
+        return data.strip(), "original"
+
+    # Tentar com diferentes pré-processamentos
+    imagens_processadas = preprocessar_imagem_para_codigo(img)
+
+    for nome_proc, img_proc in imagens_processadas:
+        data, bbox, _ = qr_detector.detectAndDecode(img_proc)
+        if data and data.strip().isdigit() and 10 <= len(data.strip()) <= 12:
+            return data.strip(), nome_proc
+
+    return None, None
+
+
 def extrair_ra_da_imagem(imagem_path):
-    """Extrai RA do QR code usando OpenCV"""
+    """Extrai RA do QR code/Barcode usando OpenCV - com suporte a rotações e correção de inclinação"""
     try:
         # Carregar imagem
         img = cv2.imread(imagem_path)
@@ -56,17 +177,68 @@ def extrair_ra_da_imagem(imagem_path):
         # Criar detector de QR Code
         qr_detector = cv2.QRCodeDetector()
 
-        # Detectar e decodificar QR code
-        data, bbox, _ = qr_detector.detectAndDecode(img)
+        # 1. Tentar detectar QR code com múltiplos pré-processamentos
+        qr_data, qr_method = detectar_qrcode_multiplas_tentativas(img, qr_detector)
+        if qr_data:
+            if qr_method != "original":
+                print(f"  (QR code detectado com pré-processamento: {qr_method})")
+            return qr_data
 
-        if data:
-            ra = data.strip()
-            # Validar se parece com um RA (numérico, 10-12 dígitos)
-            if ra.isdigit() and 10 <= len(ra) <= 12:
-                return ra
+        # 2. Tentar detectar barcode com múltiplos pré-processamentos
+        barcode_data, barcode_type = detectar_barcode(img)
+        if barcode_data:
+            print(f"  (Código de barras detectado - tipo: {barcode_type})")
+            return barcode_data
 
-        # Se não encontrou QR code, tentar procurar barcode com OpenCV
-        # (barcode é mais difícil, então vamos apenas tentar QR por enquanto)
+        # 3. Tentar corrigir inclinação leve
+        img_corrigida, angulo_correcao = corrigir_inclinacao(img)
+        if abs(angulo_correcao) > 0.5:
+            # Tentar QR code na imagem corrigida
+            qr_data, qr_method = detectar_qrcode_multiplas_tentativas(img_corrigida, qr_detector)
+            if qr_data:
+                print(f"  (QR code detectado após correção de inclinação: {angulo_correcao:.1f}° + {qr_method})")
+                return qr_data
+
+            # Tentar barcode na imagem corrigida
+            barcode_data, barcode_type = detectar_barcode(img_corrigida)
+            if barcode_data:
+                print(f"  (Código de barras detectado após correção de inclinação: {angulo_correcao:.1f}° - tipo: {barcode_type})")
+                return barcode_data
+
+        # 4. Tentar com rotações de 90° (para páginas muito tortas)
+        rotacoes = [
+            (90, cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)),
+            (180, cv2.rotate(img, cv2.ROTATE_180)),
+            (270, cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE))
+        ]
+
+        for angulo, img_rotacionada in rotacoes:
+            # Tentar QR code com múltiplos pré-processamentos
+            qr_data, qr_method = detectar_qrcode_multiplas_tentativas(img_rotacionada, qr_detector)
+            if qr_data:
+                print(f"  (QR code detectado com rotação {angulo}° + {qr_method})")
+                return qr_data
+
+            # Tentar barcode
+            barcode_data, barcode_type = detectar_barcode(img_rotacionada)
+            if barcode_data:
+                print(f"  (Código de barras detectado com rotação de {angulo}° - tipo: {barcode_type})")
+                return barcode_data
+
+            # Tentar também corrigir inclinação após rotação
+            img_rot_corrigida, angulo_correcao = corrigir_inclinacao(img_rotacionada)
+            if abs(angulo_correcao) > 0.5:
+                # Tentar QR code com múltiplos pré-processamentos
+                qr_data, qr_method = detectar_qrcode_multiplas_tentativas(img_rot_corrigida, qr_detector)
+                if qr_data:
+                    print(f"  (QR code detectado com rotação {angulo}° + inclinação {angulo_correcao:.1f}° + {qr_method})")
+                    return qr_data
+
+                # Tentar barcode
+                barcode_data, barcode_type = detectar_barcode(img_rot_corrigida)
+                if barcode_data:
+                    print(f"  (Código de barras detectado com rotação {angulo}° + inclinação {angulo_correcao:.1f}° - tipo: {barcode_type})")
+                    return barcode_data
 
         return None
     except Exception as e:

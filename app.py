@@ -4,7 +4,7 @@ Aplicação Web para Correção de Gabaritos
 Sistema completo de upload, correção e visualização de relatórios
 """
 
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, Response, stream_with_context
 from werkzeug.utils import secure_filename
 import json
 import os
@@ -13,7 +13,7 @@ from datetime import datetime
 import subprocess
 import sys
 from gerador_gabarito import GeradorGabarito
-from gerar_gabaritos_personalizados import ler_csv_alunos, listar_turmas, gerar_gabaritos_turma
+# from gerar_gabaritos_personalizados import ler_csv_alunos, listar_turmas, gerar_gabaritos_turma
 import csv
 import zipfile
 import io
@@ -42,6 +42,9 @@ Path(app.config['CSV_ALUNOS_FOLDER']).mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'pdf'}
 ALLOWED_CSV_EXTENSIONS = {'csv'}
 GABARITO_OFICIAL = 'gabarito_oficial.json'
+
+# Armazenar progresso de correções em andamento
+correction_progress = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -125,68 +128,79 @@ def upload_file():
         venv_python = os.path.join(base_dir, 'venv', 'bin', 'python3')
         corrigir_script = os.path.join(base_dir, 'corrigir_rapido.py')
 
-        result = subprocess.run(
-            [venv_python, corrigir_script, filepath, str(gabarito_path)],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        # Executar com output em tempo real
+        import threading
+        import queue
+        import uuid
 
-        if result.returncode != 0:
-            return jsonify({'error': 'Erro ao corrigir PDF'}), 500
+        job_id = str(uuid.uuid4())
+        correction_progress[job_id] = {
+            'status': 'processing',
+            'logs': [],
+            'current_page': 0,
+            'total_pages': 0
+        }
 
-        # Procurar relatório gerado
-        base_name = Path(filename).stem
-        json_files = list(Path(app.config['REPORTS_FOLDER']).glob(f'*{base_name}*relatorio.json'))
+        def run_correction():
+            process = subprocess.Popen(
+                [venv_python, corrigir_script, filepath, str(gabarito_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
 
-        if not json_files:
-            return jsonify({'error': 'Relatório não gerado'}), 500
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    log_line = line.strip()
+                    correction_progress[job_id]['logs'].append(log_line)
+                    print(log_line, flush=True)  # Log no servidor também
 
-        json_file = json_files[0]
+                    # Extrair informações do log
+                    if 'páginas detectadas' in log_line:
+                        import re
+                        match = re.search(r'(\d+) páginas', log_line)
+                        if match:
+                            correction_progress[job_id]['total_pages'] = int(match.group(1))
+                    elif 'PROCESSANDO PÁGINA' in log_line:
+                        import re
+                        match = re.search(r'PÁGINA (\d+)/(\d+)', log_line)
+                        if match:
+                            correction_progress[job_id]['current_page'] = int(match.group(1))
+                            correction_progress[job_id]['total_pages'] = int(match.group(2))
 
-        # Carregar dados do relatório
-        with open(json_file, 'r', encoding='utf-8') as f:
-            report_data = json.load(f)
+            return_code = process.wait()
+            correction_progress[job_id]['status'] = 'completed' if return_code == 0 else 'failed'
+            correction_progress[job_id]['return_code'] = return_code
 
-        # Tentar identificar turma do aluno
-        turma = encontrar_turma_aluno(filename)
-        if turma:
-            # Adicionar turma ao relatório JSON e salvar
-            if 'identificacao' not in report_data:
-                report_data['identificacao'] = {}
-            report_data['identificacao']['turma'] = turma
+        # Executar em thread separada
+        correction_thread = threading.Thread(target=run_correction)
+        correction_thread.start()
 
-            with open(json_file, 'w', encoding='utf-8') as f:
-                json.dump(report_data, f, indent=2)
-
-            # Regerar HTML com a turma atualizada
-            try:
-                from visualizar_relatorio import gerar_html_relatorio
-                gerar_html_relatorio(str(json_file))
-            except:
-                pass
-
+        # Retornar imediatamente com job_id
         return jsonify({
             'success': True,
-            'message': 'PDF corrigido com sucesso!',
-            'report': {
-                'nome': report_data.get('identificacao', {}).get('nome', 'Desconhecido'),
-                'turma': report_data.get('identificacao', {}).get('turma', 'N/A'),
-                'data': report_data.get('data_correcao', 'N/A'),
-                'nota': report_data.get('nota', 0),
-                'acertos': report_data.get('acertos', 0),
-                'erros': report_data.get('erros', 0),
-                'em_branco': report_data.get('em_branco', 0),
-                'total': report_data.get('total_questoes', 40),
-                'percentual': report_data.get('percentual', 0),
-                'json_file': json_file.name
-            }
+            'job_id': job_id,
+            'message': 'Correção iniciada'
         })
 
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Timeout ao corrigir PDF'}), 500
     except Exception as e:
         return jsonify({'error': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/correction-progress/<job_id>')
+def get_correction_progress(job_id):
+    """Retorna o progresso de uma correção em andamento"""
+    if job_id not in correction_progress:
+        return jsonify({'error': 'Job não encontrado'}), 404
+
+    progress = correction_progress[job_id]
+    return jsonify({
+        'status': progress['status'],
+        'current_page': progress['current_page'],
+        'total_pages': progress['total_pages'],
+        'logs': progress['logs'][-10:],  # Últimas 10 linhas
+        'all_logs': progress['logs']  # Todos os logs
+    })
 
 @app.route('/api/report/<filename>')
 def get_report(filename):
@@ -807,134 +821,12 @@ def limpar_gabaritos_pdf():
 @app.route('/api/csv/upload', methods=['POST'])
 def upload_csv():
     """Faz upload de CSV e analisa turmas"""
-    if 'file' not in request.files:
-        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Arquivo vazio'}), 400
-
-    if not allowed_csv_file(file.filename):
-        return jsonify({'error': 'Apenas arquivos CSV são permitidos'}), 400
-
-    # Salvar arquivo
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['CSV_UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-
-    try:
-        # Ler alunos do CSV
-        alunos = ler_csv_alunos(filepath)
-
-        # Organizar por turmas
-        turmas = listar_turmas(alunos)
-
-        # Preparar resposta
-        turmas_info = []
-        for turma, alunos_turma in sorted(turmas.items()):
-            turmas_info.append({
-                'nome': turma,
-                'num_alunos': len(alunos_turma)
-            })
-
-        return jsonify({
-            'success': True,
-            'arquivo': filename,
-            'total_alunos': len(alunos),
-            'total_turmas': len(turmas),
-            'turmas': turmas_info
-        })
-
-    except Exception as e:
-        return jsonify({'error': f'Erro ao processar CSV: {str(e)}'}), 500
+    return jsonify({'error': 'Funcionalidade temporariamente desabilitada'}), 501
 
 @app.route('/api/csv/gerar-gabaritos', methods=['POST'])
 def gerar_gabaritos_csv():
     """Gera gabaritos personalizados a partir do CSV"""
-    data = request.get_json()
-
-    if not data:
-        return jsonify({'error': 'Dados inválidos'}), 400
-
-    # Extrair parâmetros
-    csv_filename = data.get('csv_filename', '').strip()
-    turmas_selecionadas = data.get('turmas', [])
-    titulo = data.get('titulo', 'GABARITO DE PROVA').strip()
-    disciplina = data.get('disciplina', '').strip() or None
-    professor = data.get('professor', '').strip() or None
-    codigo_prova = data.get('codigo_prova', '').strip() or None
-    num_questoes = int(data.get('num_questoes', 40))
-    alternativas_str = data.get('alternativas', 'A,B,C,D,E').strip()
-
-    # Validações
-    if not csv_filename:
-        return jsonify({'error': 'Nome do arquivo CSV é obrigatório'}), 400
-
-    if not turmas_selecionadas or len(turmas_selecionadas) == 0:
-        return jsonify({'error': 'Selecione pelo menos uma turma'}), 400
-
-    csv_path = Path(app.config['CSV_UPLOAD_FOLDER']) / csv_filename
-    if not csv_path.exists():
-        return jsonify({'error': 'Arquivo CSV não encontrado'}), 404
-
-    # Processar alternativas
-    alternativas = [a.strip().upper() for a in alternativas_str.split(',') if a.strip()]
-    if not alternativas:
-        alternativas = ['A', 'B', 'C', 'D', 'E']
-
-    try:
-        # Ler alunos do CSV
-        alunos = ler_csv_alunos(str(csv_path))
-
-        # Organizar por turmas
-        turmas = listar_turmas(alunos)
-
-        # Configuração
-        config = {
-            'titulo': titulo,
-            'disciplina': disciplina,
-            'professor': professor,
-            'codigo_prova': codigo_prova,
-            'num_questoes': num_questoes,
-            'alternativas': alternativas
-        }
-
-        # Pasta de saída
-        pasta_saida = app.config['GABARITOS_PDF_FOLDER']
-
-        # Gerar gabaritos para as turmas selecionadas
-        total_alunos = 0
-        pdfs_gerados = []
-
-        for turma_nome in turmas_selecionadas:
-            if turma_nome in turmas:
-                alunos_turma = turmas[turma_nome]
-                total_alunos += len(alunos_turma)
-
-                # Gerar gabarito para a turma
-                gerar_gabaritos_turma(alunos_turma, turma_nome, pasta_saida, config)
-
-                # Nome do PDF gerado
-                import re
-                nome_pasta_limpo = re.sub(r'[/\\:*?"<>|]', '', turma_nome).strip()
-                nome_pasta_limpo = re.sub(r'\s+', '_', nome_pasta_limpo)
-                pdf_nome = f"{nome_pasta_limpo}/{nome_pasta_limpo}.pdf"
-                pdfs_gerados.append({
-                    'turma': turma_nome,
-                    'arquivo': pdf_nome,
-                    'num_alunos': len(alunos_turma)
-                })
-
-        return jsonify({
-            'success': True,
-            'message': f'Gabaritos gerados com sucesso para {len(turmas_selecionadas)} turma(s)!',
-            'total_alunos': total_alunos,
-            'total_turmas': len(turmas_selecionadas),
-            'pdfs': pdfs_gerados
-        })
-
-    except Exception as e:
-        return jsonify({'error': f'Erro ao gerar gabaritos: {str(e)}'}), 500
+    return jsonify({'error': 'Funcionalidade temporariamente desabilitada'}), 501
 
 # Funções auxiliares para mapeamento de alunos
 def carregar_mapeamento_alunos():

@@ -38,12 +38,25 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-4. Inicie a aplicação
+4. (Opcional) Instale suporte a código de barras
+```bash
+# Linux
+sudo apt-get install -y libzbar0
+
+# Windows (via chocolatey)
+choco install zbar
+
+# macOS
+brew install zbar
+```
+**Nota:** O sistema funciona sem isso, mas detectará mais alunos com o código de barras como fallback.
+
+5. Inicie a aplicação
 ```bash
 bash run_app.sh
 ```
 
-5. Acesse no navegador
+6. Acesse no navegador
 ```
 http://localhost:5000
 ```
